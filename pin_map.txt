@@ -1,0 +1,18 @@
+# Pin Number, RPi GPIO Number, Function
+03,02,M2En
+05,03,Dir
+07,04,Lim1U
+11,17,Lim1L
+12,18,Step
+13,27,Lim2U
+15,22,Lim2L
+16,23,M1En
+19,10,Lim3U
+21,09,Lim3L
+23,11,Lim4U
+29,05,Lim4L
+31,06,Lim5U
+33,13,Lim5L
+35,19,M3En
+37,26,M4En
+40,21,M5En
