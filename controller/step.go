@@ -44,10 +44,6 @@ So ... software PWM it is ...
 */
 package controller
 
-import (
-	"github.com/stianeikeland/go-rpio"
-)
-
 const (
 	stepPulseWidthMicros = 1
 	stepPulseMinPeriodMicros = 20

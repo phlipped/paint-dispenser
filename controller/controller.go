@@ -16,34 +16,22 @@ package controller
 // Location is an Enum that indicates one of three locations that a syringe might exist in
 // Note that it is not possible to know exactly where a syringe is when it is in the Middle
 
-import (
-	"github.com/stianeikeland/go-rpio"
-)
 
-func Init() (func() error, error) {
-	if err := rpio.Open(); err != nil {
-		return nil, err
-	}
-	initPins()
-	return rpio.Close, nil
-}
-
-
-type Location uint64
+type Location uint
 const (
 	Top Location = iota
 	Middle
 	Bottom
 )
 
-type Direction bool
+type Direction uint
 const (
-	Up Direction = false // The plunger is drawn up, ie takes in paint
-	Down Direction = true// The plunger is pushed down, ie dispenses paint
+	Up Direction = 1 // The plunger is drawn up, ie takes in paint
+	Down Direction = 0 // The plunger is pushed down, ie dispenses paint
 )
 
 // Colour refers to a Syringe by the colour it contains
-type Colour uint64
+type Colour uint
 const (
 	C Colour = iota
 	M
@@ -53,15 +41,17 @@ const (
 )
 
 // Action represents an Action that the device is performing
-type Action int
+type Action uint
 const (
 	Idle Action = iota
-	Dispense
-	HomeOut
-	HomeIn
+	Dispensing
+	HomingOut
+	HomingIn
 )
 
 // Distance represents an amount of dispensing to be done
+// The units are not yet defined, but most likely it will
+// represent the number of steps that the stepper motor needs to make
 type Distance uint64
 
 // Locations and Distances types hold the corresponding values
@@ -69,22 +59,23 @@ type Distance uint64
 type Locations [5]Location
 type Distances [5]Distance
 
+
 // Dispense will cause paint to be dispensed from syringes.
 // The amount of paint dispensed is determined by the values in d
-//func (c *Controller) Dispense(dists Distances) error {
-//	return nil
-//}
+func Dispense(dists Distances) error {
+	return nil
+}
 
 // HomeOut will dispense all paint from selected syringes
 // Syringes are selected by having a non-zero value in d
-//func (c *Controller) HomeOut(dists Distances) error {
-//
-//	return nil
-//}
+func HomeOut(dists Distances) error {
+
+	return nil
+}
 
 // HomeIn will draw up the selected syringes.
 // Syringes are selected by having a non-zero value in d
-//func (c *Controller) HomeIn(dists Distances) error {
-//
-//	return nil
-//}
+func HomeIn(dists Distances) error {
+
+	return nil
+}

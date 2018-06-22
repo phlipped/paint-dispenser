@@ -12,7 +12,7 @@ func main() {
 	subcommands.Register(subcommands.FlagsCommand(), "")
 	subcommands.Register(subcommands.CommandsCommand(), "")
 	subcommands.Register(&statusCmd{}, "")
-	subcommands.Register(&pinTestCmd{}, "")
+	subcommands.Register(&wavetestCmd{}, "")
 
 	flag.Parse()
 	ctx := context.Background()

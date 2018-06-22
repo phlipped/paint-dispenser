@@ -1,18 +1,28 @@
 package controller
 
-import (
-	"github.com/stianeikeland/go-rpio"
+type GpioPin uint8
+
+const(
+	DIR_PIN GpioPin = 3
+	STEP_PIN GpioPin = 18
+	EN1_PIN GpioPin = 23
+	EN2_PIN GpioPin = 2
+	EN3_PIN GpioPin = 19
+	EN4_PIN GpioPin = 26
+	EN5_PIN GpioPin = 21
+	LIM_1U_PIN GpioPin = 4
+	LIM_1L_PIN GpioPin = 17
+	LIM_2U_PIN GpioPin = 27
+	LIM_2L_PIN GpioPin = 22
+	LIM_3U_PIN GpioPin = 10
+	LIM_3L_PIN GpioPin = 9
+	LIM_4U_PIN GpioPin = 11
+	LIM_4L_PIN GpioPin = 5
+	LIM_5U_PIN GpioPin = 6
+	LIM_5L_PIN GpioPin = 13
 )
-
-type pinInit struct {
-	name string
-	direction rpio.Mode
-	value rpio.State
-}
-
-// Map Paint Dispenser Controller names to the corresponding Pin Names used in Embd
-var pinInits = []pinInit {
-	{"dir", rpio.Output, rpio.Low},
+var pinInits = []map[GpioPin][]struct{uint32, uint32} {
+	{"dir", gopigpio.OUTPUT, gopigpio.GPIO_LOW},
 	{"step", rpio.Output, rpio.Low},
 	{"en1", rpio.Output, rpio.High},
 	{"en2", rpio.Output, rpio.High},
@@ -35,24 +45,8 @@ var EnablePinNames = []string{"en1", "en2", "en3", "en4", "en5"}
 var LimitUpperPinNames = []string{"lim1U", "lim2U", "lim3U", "lim4U", "lim5U"}
 var LimitLowerPinNames = []string{"lim1L", "lim2L", "lim3L", "lim4L", "lim5L"}
 
+
 var Pins = map[string]rpio.Pin{
-	"dir": 3,
-	"step": 18,
-	"en1": 23,
-	"en2": 2,
-	"en3": 19,
-	"en4": 26,
-	"en5": 21,
-	"lim1U": 4,
-	"lim1L": 17,
-	"lim2U": 27,
-	"lim2L": 22,
-	"lim3U": 10,
-	"lim3L": 9,
-	"lim4U": 11,
-	"lim4L": 5,
-	"lim5U": 6,
-	"lim5L": 13,
 }
 
 func initPins() {
