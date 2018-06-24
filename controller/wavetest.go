@@ -9,7 +9,7 @@ import (
 )
 
 const (
-	pin = 18
+	TEST_PIN gopigpio.Pin = STEP_PIN
 )
 
 func WaveTest() {
@@ -18,18 +18,17 @@ func WaveTest() {
 		panic(err)
 	}
 
-	gopigpio.GpioSetMode(p, pin, gopigpio.OUTPUT)
+	if err := gopigpio.GpioSetMode(p, TEST_PIN, gopigpio.OUTPUT); err != nil {
+		panic(err)
+	}
 
 	gopigpio.WaveClear(p)
 	gopigpio.WaveAddNew(p)
 
-	if err := gopigpio.GpioSetMode(p, pin, gopigpio.OUTPUT); err != nil {
-		panic(err)
-	}
 
 	pulses := []gopigpio.Pulse{
-		{[]uint{18}, []uint{}, time.Microsecond * 10},
-		{[]uint{}, []uint{18}, time.Microsecond * 5},
+		{[]gopigpio.Pin{TEST_PIN}, []gopigpio.Pin{}, time.Microsecond * 10},
+		{[]gopigpio.Pin{}, []gopigpio.Pin{TEST_PIN}, time.Microsecond * 5},
 	}
 	result, err := gopigpio.WaveAddGeneric(p, pulses)
 	if err != nil {

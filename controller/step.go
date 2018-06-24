@@ -44,6 +44,11 @@ So ... software PWM it is ...
 */
 package controller
 
+import (
+	"io"
+	"github.com/phlipped/gopigpio"
+)
+
 const (
 	stepPulseWidthMicros = 1
 	stepPulseMinPeriodMicros = 20
@@ -54,54 +59,40 @@ type StepCount uint32
 
 // doSteps moves the steppers the number of steps specified in distances
 // FIXME make it ease-in at the start
-func doSteps(dists Distances, dir Direction) {
+func doSteps(p io.ReadWriter, dists Distances, dir Direction) {
 	// Set the direction
-	dirPin := Pins["dir"]
+	var dirVal gopigpio.PinVal
+	var limitPins []gopigpio.Pin
 	if dir == Up {
 		// FIXME check which way round this should be ...
-		dirPin.Write(rpio.High)
+		dirVal = gopigpio.GPIO_LOW
+		limitPins = LimitUpperPins
 	} else {
-		dirPin.Write(rpio.Low)
+		dirVal = gopigpio.GPIO_HIGH
+		limitPins = LimitLowerPins
 	}
-
-	// Init the step pin
-	stepPin := Pins["step"]
-	stepPin.Write(rpio.Low)
-
-	// Init array of Enable Pins
-	enablePins := [5]rpio.Pin{}
-	for i, pinName := range EnablePinNames {
-		enablePins[i] = Pins[pinName]
-		enablePins[i].Write(rpio.Low) // Low == Enabled
+	if err := gopigpio.GpioWrite(p, DIR_PIN, dirVal); err != nil {
+		panic(err) // FIXME do better
 	}
-
-	// Init Limit Pin Inputs
-	limitPinBank := []string{}
-	if dir == Up {
-		limitPinBank = LimitUpperPinNames
-	} else {
-		limitPinBank = LimitLowerPinNames
-	}
-	limitPins := [5]rpio.Pin{}
-	for i, pinName := range limitPinBank {
-		limitPins[i] = Pins[pinName]
-	}
-
-	// This loop has to be tight, yo
-	// while any of the pins are still enabled ...
-	enableMask := 0x1f // 0b11111 - 1 bit for each of the steppers
-	for enableMask != 0 {
-		// Check distances - if zero, disable corresponding enable pin, and update the enable Mask
-		for i := uint8(0); i < 5; i++ {
-			// If the distance 
-			if dists[i] == 0 || limitPins[i].Read() == rpio.High {
-				enableMask ^= 1 << i
-				enablePins[i].Write(rpio.High) // High == Disabled
-			}
+	// Setting the pull direction should be done in some kind of init phase, IMHO, and shouldn't need to be redone each time we do steps
+	for _, pin := range limitPins {
+		if err := gopigpio.GpioSetPullUpDown(p, pin, gopigpio.GPIO_PULL_HIGH); err != nil { // FIXME check which way we want to pull them
+			panic(err) // FIXME do better
 		}
-		// Check if any of the limit switches are triggered - if so, disable the corresponding pin.
-		// Push the step pin up ... wait a microsecond and then pull it down again.
-		// Wait out the timeout until the next step is due ...
 	}
+
+	// Set step pin to definitely be turned off
+	if err := gopigpio.GpioWrite(p, STEP_PIN, gopigpio.GPIO_LOW); err != nil {
+		panic(err) // FIXME do better
+	}
+
+	// Init all Enable Pins to turn them on
+	for _, pin := range EnablePins {
+		if err := gopigpio.GpioWrite(p, pin, gopigpio.GPIO_HIGH); err != nil { // Low == Enabled
+			panic(err) // FIXME do better
+		}
+	}
+
+	// FIXME actually make the waveforms that we need to make for each pin
 
 }
