@@ -128,13 +128,30 @@ func doSteps(p io.ReadWriter, dists Distances, dir Direction) error {
 	return nil
 }
 
+// PulseDelayInterval describes an interval, and a PulseDelay to use in that interval
+// A series of PulseDelayIntervals can be used to describe a changing rate of pulses
+type PulseDelayInterval struct {
+	start time.Duration // The start time of this Interval, assuming the first interval in a sequence of
+			    //   intervals starts at 0. Each subsequent interval should start exactly at
+			    //   <prevInterval>.start + <prevInterval>.width
+	width time.Duration // The duration of the interval
+	delay time.Duration // How long the delay between pulse starts should be. This does NOT account for
+			    //   the width of the pulse itself
+}
+
+
 // calcRampRates calculates a series of constant rates that approximate a continuously variable rate function
-// In addition to the rate function, startX and endX values must be provided that describe which part of the rate function to use.
-// To calulate a suitable rate, the definite integral of the rate function is calculated over each interval, which is used to calculate
+// In addition to the rate function, startX and endX values must be provided that
+//   describe which part of the rate function to use.
+// To calulate a suitable rate, the definite integral of the rate function is calculated over each interval,
+//   which is used to calculate
 // an equivalent constant rate over that interval.
 // The actual end time of each interval may be adjusted so that there is an integer number of pulses in that interval.
-// The adjustment of the end time of an interval will affect the start time of the next interval. The normal end time of the next interval is still used as the target end time for that interval, but it may also be subject to adjustment when the rate for that interval is calculated.
-func calcRampRates(
+// The adjustment of the end time of an interval will affect the start time of
+//   the next interval. The normal end time of the next interval is still used
+//   as the target end time for that interval, but it may also be subject to
+//   adjustment when the rate for that interval is calculated.
+func calcPulseDelayIntervals(
 	rateFunc func(float64) float64, // The rate function
 	startX float64, // The input value to use for the start of the rate function
 	endX float64, // The input value to use for the end of the rate function
@@ -142,11 +159,9 @@ func calcRampRates(
 	endRate float64, // The rate to reach by the end of the ramp up time
 	rampTime time.Duration, // Total duration of ramp up
 	intervals int, // Number of intervals to generate
-) {
-	funcIntervalWidth := (endX - startX) / intervals
-	timeIntervalWidth := t.Nanoseconds() / intervals
-	
-	var stepsSoFar int
-	
+) []PulseDelayInterval {
+	var pdis []PulseDelayInterval
 
+
+	return pdis
 }
