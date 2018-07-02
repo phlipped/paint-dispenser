@@ -59,6 +59,27 @@ type Distance uint64
 type Locations [5]Location
 type Distances [5]Distance
 
+func (ds Distances) AllZero() bool {
+	allZero := true
+	for _, d := range ds {
+		if d > 0 {
+			allZero = false
+			break
+		}
+	}
+	return allZero
+}
+
+func (ds Distances) Min() Distance {
+	min := ds[0]
+	for _, d := range ds[1:] {
+		if d < min {
+			min = d
+		}
+	}
+	return min
+}
+
 
 // Dispense will cause paint to be dispensed from syringes.
 // The amount of paint dispensed is determined by the values in d
