@@ -1,5 +1,12 @@
 package controller
 
+import (
+	"log"
+	"os"
+)
+
+var debug = log.New(os.Stdout, "DEBUG ", log.Lshortfile)
+
 // controller provides functions and data structures for interacting with the
 // device
 // It is the primary interface used by Application code to interact with the Dispenser.
@@ -70,10 +77,10 @@ func (ds Distances) AllZero() bool {
 	return allZero
 }
 
-func (ds Distances) Min() Distance {
+func (ds Distances) MinNotZero() Distance {
 	min := ds[0]
 	for _, d := range ds[1:] {
-		if d < min {
+		if (d > 0 && (min == 0 || d < min)) {
 			min = d
 		}
 	}
