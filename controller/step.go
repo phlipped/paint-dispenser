@@ -1,7 +1,6 @@
 package controller
 
 import (
-	"fmt"
 	"io"
 	"math"
 	"time"
@@ -11,7 +10,7 @@ import (
 )
 
 const (
-	stepPulseWidth = time.Duration(2) * time.Microsecond
+	stepPulseWidth = time.Duration(10) * time.Microsecond
 	stepPulseWait = time.Duration(2) * time.Microsecond
 	stepPulseMinPeriod = time.Duration(20) * time.Microsecond
 	stepPulseMaxPeriod = time.Duration(100) * time.Microsecond
@@ -51,7 +50,9 @@ var rampFunc = WrapFunction(RampShapeFunc, rampFuncStart, rampFuncEnd, 0.0, floa
 // DoSteps moves the steppers the number of steps specified in <dists>
 func DoSteps(pigpio io.ReadWriter, dists Distances, dir Direction) error {
 
-	// FIXME Clear out all the current waves
+	if err := gopigpio.WaveClear(pigpio); err != nil {
+		return err // FIXME_LOW return a better error
+	}
 
 	// Set Direction and LimitPin variables based on <dir>
 	var dirVal gopigpio.PinVal
@@ -65,7 +66,7 @@ func DoSteps(pigpio io.ReadWriter, dists Distances, dir Direction) error {
 		limitPins = LimitLowerPins
 	}
 	if err := gopigpio.GpioWrite(pigpio, DIR_PIN, dirVal); err != nil {
-		return err // FIXME do better - custom error and logging
+		return err // FIXME_LOW do better - custom error and logging
 	}
 
 	// Setting the GPIO pull on the limit pin inputs should be done in some kind of init phase, IMHO,
@@ -73,36 +74,167 @@ func DoSteps(pigpio io.ReadWriter, dists Distances, dir Direction) error {
 	// FIXME make this a function, if nothing else
 	for _, pin := range limitPins {
 		if err := gopigpio.GpioSetPullUpDown(pigpio, pin, gopigpio.GPIO_PULL_HIGH); err != nil { // FIXME confirm which way we want to pull them
-			return err // FIXME do better - custom error and logging
+			return err // FIXME_LOW do better - custom error and logging
 		}
 	}
 
 	// Set step pin to definitely be turned off
 	if err := gopigpio.GpioWrite(pigpio, STEP_PIN, gopigpio.GPIO_LOW); err != nil {
-		return err // FIXME do better - custom error and logging
+		return err // FIXME_LOW do better - custom error and logging
 	}
 
 	// Init all Enable Pins so the motors are then enabled
 	for _, pin := range EnablePins {
 		if err := gopigpio.GpioWrite(pigpio, pin, gopigpio.GPIO_HIGH); err != nil { // Low == Enabled
-			return err // FIXME do better - custom error and logging
+			return err // FIXME_LOW do better - custom error and logging
 		}
 	}
 
 	// Generate the series of waveforms we want to send
 	waveChain, err := makeWaveChain(pigpio, dists)
 	if err != nil {
-		return err // FIXME Log, do better
+		return err // FIXME_LOW Log, do better
 	}
 
+
 	// Set up a callback for any of the limit switches being hit
+	limitWatcherCancelChan := make(chan struct{})
+	limitWatcherErrorChan := make(chan error)
+	limitWatcherChan, err := watchLimits(pigpio, limitPins, limitWatcherCancelChan, limitWatcherErrorChan)
+	if err != nil {
+		return err // FIXME_LOW Log, do better
+	}
 
-	// Transmit the waveChain
-	_ = waveChain // FIXME implement
+	// Start the transmit of the waveChain
+	debug.Println("Starting transmit of step pulses ...")
+	_, err = gopigpio.WaveChain(pigpio, waveChain)
+	if err != nil {
+		return err // FIXME_LOW Log, do better
+	}
 
-	// Wait for the waveform to be finished, or for a limit switch to be hit
+	// Set up a watcher for the waveChain being done ...
+	waveChainWaiterCancelChan := make(chan struct{})
+	waveChainWaiterErrorChan := make(chan error)
+	waveChainDoneChan := waitForWaveTransmitFinished(pigpio, waveChainWaiterCancelChan, waveChainWaiterErrorChan)
+
+	// Wait for the waveform to be finished OR for a limit switch to be hit
+	select {
+	case limitPin := <-limitWatcherChan:
+		// FIXME Kill the current waveform
+		// Maybe also turn off all the enable pins pro-actively too?
+		_ = limitPin
+	case <-waveChainDoneChan:
+		// Clean up?
+	case err := <-limitWatcherErrorChan:
+		// Send various cancels?
+		_ = err
+	case err := <-waveChainWaiterErrorChan:
+		// Send various cancels?
+		_ = err
+	}
+
+	// FIXME Cancel things and generally close various channels
 
 	return nil
+}
+
+func watchLimits(pigpio io.ReadWriter, limitPins []gopigpio.Pin, cancelChan <-chan struct{}, errorChan chan<- error) (<-chan gopigpio.Pin, error) {
+	// FIXME Set up a callback/notification/signal with pigpio to get notified about
+	// limitPins getting hit.
+	terminateChan := make(chan struct{})
+	errorChan2 := make(chan error)
+
+	h, err := gopigpio.NotifyOpen(pigpio)
+	if err != nil {
+		// FIXME do better error handling
+		return nil, err
+	}
+
+	// Start notifications on the pins we're interested in
+	_, err = gopigpio.NotifyBegin(pigpio, h, limitPins)
+	if err != nil {
+		// FIXME do better error handling
+		return nil, err
+
+	}
+
+	// Read the notifications we receive and extract out the pin notifications
+	limitHitChan := make(chan gopigpio.Pin)
+	go func() {
+		// Defer the close the notification handle
+		defer func() {
+			_, err := gopigpio.NotifyClose(pigpio, h)
+			if err != nil {
+				// FIXME_LOW do better error handling and reporting
+				errorChan<- err
+			}
+		}()
+
+		notifications := gopigpio.ReadNotificationsFromHandle(h, terminateChan, errorChan2)
+
+		done := true
+		for done {
+			select {
+			case _ = <-cancelChan:
+				// FIXME Review this
+				terminateChan<- struct{}{}
+			case err := <-errorChan2:
+				// FIXME handle errors better?
+				errorChan<-err
+			case n, ok := <-notifications:
+				for _, pin := range limitPins {
+					if n.Levels[uint(pin)] == gopigpio.GPIO_HIGH { // FIXME double check the correct value here ...
+						limitHitChan<- pin
+					}
+				}
+				done = ok
+			}
+
+		}
+	}()
+
+	return limitHitChan, nil
+}
+
+// This function gets starts a go routine, and returns a channel that is used to communicate with the goroutine
+// The goroutine's goal is to provide a signal that Pigpio has finished transmitting a wave
+// The goroutine can be cancelled by sending a message on the cancel channel
+// The goroutine may also submit an error to an error channel. If it does this, it will stop
+
+// The goroutine exits if it receives a message on cancelChan, or after it sends a message indicating that
+// transmission has finished.
+// No matter what, the goroutine will close the resultChannel as it exits.
+func waitForWaveTransmitFinished(pigpio io.ReadWriter, cancelChan <-chan struct{}, errorChan chan<- error) (<-chan struct{}) {
+
+	doneChan := make(chan struct{})
+	go func() {
+		// Close doneChan
+		defer func() {
+			close(doneChan)
+		}()
+
+		for {
+			// Check if still Tx-ing
+			res, err := gopigpio.WaveTxBusy(pigpio)
+			if err != nil {
+				errorChan<- err
+			}
+			debug.Printf("still transmitting, sleeping for 1 second\n")
+			if res == 0 {
+				break
+			}
+
+			// Wait a bit, but also listen for cancel signals
+			timeoutChan := time.After(time.Duration(1) * time.Second)
+			select {
+			case _ = <-timeoutChan:
+			case _ = <-cancelChan:
+				break
+			}
+		}
+	}()
+
+	return doneChan
 }
 
 func makeWaveChain(pigpio io.ReadWriter, dists Distances) (gopigpio.Chainers, error) {
@@ -124,14 +256,8 @@ func makeWaveChain(pigpio io.ReadWriter, dists Distances) (gopigpio.Chainers, er
 
 	// While there's still some steps in <dists>:
 	for ! dists.AllZero() {
-		debug.Printf("\n----------------------------\n")
-		debug.Printf("dists: %v\n", dists)
-		debug.Printf("currPDIPulseCount: %d", currPDIPulseCount)
-		debug.Printf("currPulseWidth: %d", currPulseWidth)
-
 		// Update the currPDI if the pulse count has hit zero
 		for currPDIPulseCount == 0 {
-			debug.Printf("Recalulating currPDIPulseWidth")
 			// advance the currPDIIndex, panic if overflow
 			if currPDIIndex += 1; currPDIIndex == len(pdis) {
 				panic("Overflow of PDI structure. Means we used up all the steps in the last PDI in the PDI set. This should never happen. Means at least one distance was bigger than uint64")
@@ -140,15 +266,12 @@ func makeWaveChain(pigpio io.ReadWriter, dists Distances) (gopigpio.Chainers, er
 			currPulseWidth = pdis[currPDIIndex].period
 			// reload currPDIPulseCount
 			currPDIPulseCount = pdis[currPDIIndex].count
-			debug.Printf("currPDIPulseCount: %d", currPDIPulseCount)
-			debug.Printf("currPulseWidth: %d", currPulseWidth)
 		}
 
 		// If any of the <dists> are about to Expire (ie, have a value of 1):
 		// 	- Do a single step pulse, which incorporates a disable pulse for any of those pins
 		//	- Then start a new iteration of the overall loop
 		if uint64(dists.MinNotZero()) == 1 {
-			debug.Printf("At least one dist is about to expire - making a special pulse")
 			// FIXME IMPLEMENT
 			disablePins := []gopigpio.Pin{}
 			for i, d := range dists {
@@ -162,7 +285,6 @@ func makeWaveChain(pigpio io.ReadWriter, dists Distances) (gopigpio.Chainers, er
 			if err != nil {
 				return gopigpio.Chainers(chain), err // FIXME log, do better etc
 			}
-			debug.Printf("SingleStepDisablechain: %v\n", subChain)
 
 			// Add the new chain to the overall chain
 			chain = append(chain, subChain)
@@ -182,19 +304,16 @@ func makeWaveChain(pigpio io.ReadWriter, dists Distances) (gopigpio.Chainers, er
 		// Set "loopCount" to the minimum of currPDIPulseCount and dists.MintNotZero()-1
 		// set NextLoopCount to currPDIPulseCount
 		loopCount := uint64(dists.MinNotZero() - 1)
-		debug.Printf("MinNotZero - 1: %d\n", loopCount)
 
 		if currPDIPulseCount < loopCount {
 			loopCount = currPDIPulseCount
 		}
-		debug.Printf("loopCount: %d\n", loopCount)
 
 		// Create a loop based on the current PDI width and loop count
 		subChain, err := makeStepLoopChain(pigpio, currPulseWidth, loopCount)
 		if err != nil {
 			return gopigpio.Chainers(chain), err // FIXME log, do better, etc	
 		}
-		debug.Printf("LoopNChain: %v\n", subChain)
 
 		// Add the new chain to the overall chain
 		chain = append(chain, subChain)
@@ -208,7 +327,6 @@ func makeWaveChain(pigpio io.ReadWriter, dists Distances) (gopigpio.Chainers, er
 		}
 	}
 
-	debug.Printf("chain result is: %v\n", chain)
 	return gopigpio.Chainers(chain), nil
 }
 
@@ -232,18 +350,16 @@ func makeStepWithPinDisableChain(pigpio io.ReadWriter, period time.Duration, dis
 
 	pulses := []gopigpio.Pulse{pulseDelay, pulseDisable}
 
-	pulseCount, err := gopigpio.WaveAddGeneric(pigpio, pulses)
+	_, err := gopigpio.WaveAddGeneric(pigpio, pulses)
 	if err != nil { // FIXME validate the pulse count we receive back
 		return gopigpio.ChainWaveID(0), err // FIXME log, do better, whatever
 	}
-	debug.Printf("Number of Pulses in current wave is %d\n", pulseCount)
 
 	// Create a wave from the pulses added so far
 	waveID, err := gopigpio.WaveCreate(pigpio)
 	if err != nil {
 		return gopigpio.ChainWaveID(waveID), err // FIXME lo, do better, whatever
 	}
-	debug.Printf("WaveID is %d\n", waveID)
 
 	return gopigpio.ChainWaveID(waveID), nil
 
@@ -269,7 +385,6 @@ func makeStepLoopChain(pigpio io.ReadWriter, period time.Duration, count uint64)
 	if err != nil {
 		return chain, err // FIXME lo, do better, whatever
 	}
-	debug.Printf("WaveID is %d\n", waveID)
 
 	// FIXME this is crap, do better
 	// Make sure we haven't overflowed the capability of our loop structure
@@ -300,11 +415,10 @@ func addStepPulseToWave(pigpio io.ReadWriter, period time.Duration) error {
 
 	pulses := []gopigpio.Pulse{pulseUp, pulseDown}
 
-	pulseCount, err := gopigpio.WaveAddGeneric(pigpio, pulses)
+	_, err := gopigpio.WaveAddGeneric(pigpio, pulses)
 	if err != nil { // FIXME validate the pulse count we receive back
 		return err // FIXME log, do better, whatever
 	}
-	debug.Printf("Number of Pulses in current wave is %d\n", pulseCount)
 
 	return nil
 }
@@ -338,7 +452,6 @@ func CalcPulseDelayIntervals(
 	var pdis []PulsePeriodInterval
 
 	intervalWidthNanos := float64(duration.Nanoseconds()) / float64(intervals)
-	fmt.Printf("IntervalWidthNanos is %f\n", intervalWidthNanos)
 	pulsesSoFar := 0
 
 	intervalStartNanos := 0.0 // At each loop iteration, this will get set to the the end of the previous interval

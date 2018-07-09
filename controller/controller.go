@@ -5,7 +5,7 @@ import (
 	"os"
 )
 
-var debug = log.New(os.Stdout, "DEBUG ", log.Lshortfile)
+var debug = log.New(os.Stdout, "DEBUG ", log.Lshortfile | log.Lmicroseconds)
 
 // controller provides functions and data structures for interacting with the
 // device
